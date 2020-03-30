@@ -7,24 +7,24 @@
 #include <cmath>
 #include <time.h>
 
-//using namespace std;
-//#define dimension_size 32
+
 
 __global__ void add(unsigned int * z,int a,int c, int b,int d,int M)
 {
 	unsigned short pre_row = threadIdx.x + blockIdx.x * blockDim.x;
 	unsigned short pre_col = threadIdx.y + blockIdx.y * blockDim.y;
-	z[M*pre_row+pre_col] = 0;//一开始忘记给z[]赋初值！！！
+	unsigned int k = 0;//一开始忘记给z[]赋初值！！！一定是M！！！
 	unsigned short row = pre_row + c;
 	unsigned short col = pre_col + b;
 	//printf("%d,%d\n", pre_row, pre_col);
 	if (row >=c && row <= a && col >= b && col <= d) {
-		
 		for (int i = 0; i < sizeof(row) * CHAR_BIT; i++) {
-			z[M*pre_row+pre_col] |= (row & 1U << i) << (i + 1) | (col & 1U << i) << i;
+			 k|= (row & 1U << i) << (i + 1) | (col & 1U << i) << i;
+			 z[M*pre_row + pre_col] = k;
 		}
 	}
 }
+
 void encode()
 {
 	printf("coordinate input:\n");
@@ -35,45 +35,124 @@ void encode()
 	}
 	printf("%d\n", z);
 }
-void decode()
+
+__global__ void de(unsigned int * z, unsigned int * a, unsigned int * b,int row,int col)
 {
-	unsigned int z;
-	int flag=0, i=0, j=0;
-	int row=0, col=0;
-	printf("SFC_value input:\n");
-	scanf("%d", &z);
-	unsigned int a[16] = { 0 };//行
-	unsigned int b[16] = { 0 };//列
-	while (z>0)
+	unsigned short pre_row = threadIdx.x + blockIdx.x * blockDim.x;
+	unsigned short pre_col = threadIdx.y + blockIdx.y * blockDim.y;
+	printf("%d", pre_row);
+	int flag = 0;
+	int i, j;
+	unsigned int m[16] = { 0 };//行
+	unsigned int n[16] = { 0 };//列
+	while (z[pre_row*row + pre_col]>0)
 	{
 		if (flag == 0) {
-			b[i] = z % 2;
+			n[i] = z[pre_row*row + pre_col] % 2;
 			i = i + 1;
-			z = z / 2;
+			z[pre_row*row + pre_col] = z[pre_row*row + pre_col] / 2;
 			flag = 1;
 		}
 		else {
-			a[j] = z % 2;
+			m[j] = z[pre_row*row + pre_col] % 2;
 			j = j + 1;
-			z = z / 2;
+			z[pre_row*row + pre_col] = z[pre_row*row + pre_col] / 2;
 			flag = 0;
 		}
 	}
 	while (j > 0) {
-		if (a[--j] == 1) {
-			row += pow(2,j);
-		}	
-	}
-	while (i > 0) {
-		if (b[--i] == 1) {
-			col += pow(2, i);
+		if (m[--j] == 1) {
+			int x = j;
+			int mul=1;
+			while (x > 0) {
+				mul = 2*mul;
+				x--;
+			}
+			a[pre_row] += mul;
 		}
 	}
-	printf("%d,%d\n", row, col);
+	while (i > 0) {
+		if (n[--i] == 1) {
+			int y = i;
+			int mul2 = 1;
+			while (y > 0) {
+				mul2 = 2 * mul2;
+				y--;
+			}
+			b[pre_col] += mul2;
+		}
+	}
+}
+
+void decode()
+{
+	int row = 1000;
+	int col = 1000;
+	int number = row * col;
+	unsigned int *z;
+	z = (unsigned int*)malloc(number * sizeof(unsigned int));
+	unsigned int *a;
+	a = (unsigned int*)malloc(row * sizeof(unsigned int));
+	unsigned int *b;
+	b = (unsigned int*)malloc(col * sizeof(unsigned int));
+	unsigned int *d_a;
+	cudaMalloc((void**)&d_a, row * sizeof(unsigned int));
+	unsigned int *d_b;
+	cudaMalloc((void**)&d_b, col * sizeof(unsigned int));
+	unsigned int *d_z;
+	cudaMalloc((void**)&d_z, number * sizeof(unsigned int));
+	
+	int i, j;
+	FILE *fp;
+	char infile[10];
+	printf("SFC_value input:\n");
+	scanf("%s", infile);
+	fp = fopen(infile, "r");
+	if (fp == NULL)
+	{
+		printf("cannot open file\n");
+		return;
+	}
+	for (i = 0; i<row; i++)
+	{
+		for (j = 0; j<col; j++)
+		{
+			fscanf(fp, "%d ", &z[i*col + j]);
+		}
+		fscanf(fp, "\n");
+	}
+	cudaMemcpy((void*)d_a, (void*)a, row * sizeof(unsigned int), cudaMemcpyHostToDevice);
+	cudaMemcpy((void*)d_b, (void*)b, col * sizeof(unsigned int), cudaMemcpyHostToDevice);
+	cudaMemcpy((void*)d_z, (void*)z, number * sizeof(unsigned int), cudaMemcpyHostToDevice);
+	int BLOCKCOLS = 16;
+	int BLOCKROWS = 16;
+	int gridCols = (col + BLOCKCOLS - 1) / BLOCKCOLS;
+	int gridRows = (row + BLOCKROWS - 1) / BLOCKROWS;
+	dim3 gridSize(gridRows, gridCols);//行列不能反，否则在核函数中计算行列标记会出错
+	dim3 blockSize(BLOCKROWS, BLOCKCOLS);
+	//dim3 gridSize((number + blockSize.x*blockSize.y - 1) / (blockSize.x*blockSize.y));
+	//add << <gridSize, blockSize >> >(d_z);
+	de << <gridSize, blockSize >> >(d_z,d_a,d_b,row,col);
+	//add << <1, blockSize >> >(d_z, a, c, b, d);
+	cudaMemcpy((void*)a, (void*)d_a, row * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+	cudaMemcpy((void*)b, (void*)d_b, row * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+	FILE *outfile;
+	outfile = fopen("decode.txt", "w");
+	if (outfile == NULL) {
+		printf("无法打开文件\n");
+	}
+	for (int i = 0; i < row; i++)
+	{
+		for (int j = 0; j < col; j++)
+		{
+			fprintf(outfile, "(%d,%d)", a[i],b[j]);
+		}
+		fprintf(outfile, "\n");
+	}
+
 }
 void query()
 {
-	
 	int a, b, c, d;
 	printf("box input:\n");
 	scanf("%d%d%d%d", &a, &b, &c, &d);
@@ -81,26 +160,23 @@ void query()
 	clock_t start_time = clock();
 	int N = a - c + 1;
 	int M = d - b + 1;
+	
 	int number = N * M;
-	int nBytes = number*sizeof(unsigned int);
+	//int nBytes = number*sizeof(unsigned int);
 	unsigned int *z;
 	unsigned int *d_z;
-	cudaMalloc((void**)&d_z, nBytes);
-	z = (unsigned int*)malloc(nBytes);
-	cudaMemcpy((void*)d_z, (void*)z, nBytes, cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&d_z, number * sizeof(unsigned int));
+	z = (unsigned int*)malloc(number * sizeof(unsigned int));
+	cudaMemcpy((void*)d_z, (void*)z, number * sizeof(unsigned int), cudaMemcpyHostToDevice);
 	int BLOCKCOLS = 16;
 	int BLOCKROWS = 16;
 	int gridCols = (M + BLOCKCOLS - 1) / BLOCKCOLS;
 	int gridRows = (N + BLOCKROWS - 1) / BLOCKROWS;
-	dim3 gridSize(gridRows,gridCols);
+	dim3 gridSize(gridRows,gridCols);//行列不能反，否则在核函数中计算行列标记会出错
 	dim3 blockSize(BLOCKROWS, BLOCKCOLS);
-	//dim3 blockSize(256);
-	
-	//dim3 blockSize(1,16);
 	//dim3 gridSize((number + blockSize.x*blockSize.y - 1) / (blockSize.x*blockSize.y));
 	//add << <gridSize, blockSize >> >(d_z);
 	add << <gridSize, blockSize >> >(d_z, a, c, b, d,M);
-	//printf("$$$$$$$$$$$$$$$$$");
 	//add << <1, blockSize >> >(d_z, a, c, b, d);
 	cudaMemcpy((void*)z, (void*)d_z, N*M * sizeof(unsigned int), cudaMemcpyDeviceToHost);
 	FILE *outfile;
@@ -118,14 +194,14 @@ void query()
 	}
 	fclose(outfile);
 	printf("finished!\n");
-	clock_t end_time = clock();
-	float clockTime = static_cast<double>(end_time - start_time) / CLOCKS_PER_SEC * 1000;
-	printf("Running time is:   %3.2f ms\n", clockTime);
+	
 	cudaFree(d_z);
 	free(z);
 }
 int main()
 {
+	//decode();
+	
 	query();
 	int option;
 	while (1)
@@ -142,5 +218,8 @@ int main()
 		case 3:query();
 		}
 	}
+	//clock_t end_time = clock();
+	//float clockTime = static_cast<double>(end_time - start_time) / CLOCKS_PER_SEC * 1000;
+	//printf("Running time is:   %3.2f ms\n", clockTime);
 	return 0;
 }
