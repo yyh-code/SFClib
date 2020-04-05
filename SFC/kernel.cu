@@ -6,10 +6,10 @@
 #include <stdio.h>
 #include <cmath>
 #include <time.h>
+#include <thrust/sort.h>
+#include <vector>
 
-
-
-
+using std::vector;
 __global__ void en(unsigned int * z, int N,int M)
 {
 	unsigned short row = threadIdx.x + blockIdx.x * blockDim.x;
@@ -196,6 +196,56 @@ __global__ void add(unsigned int * z, int a, int c, int b, int d, int M)
 		}
 	}
 }
+
+void result(unsigned int * z,int N,int M,int number) {
+	FILE *outfile;
+	outfile = fopen("Query.txt", "w");
+	if (outfile == NULL) {
+		printf("无法打开文件\n");
+	}
+	for (int i = 0; i<N; i++)
+	{
+		for (int j = 0; j<M; j++)
+		{
+			fprintf(outfile, "%d ", z[i*M + j]);
+		}
+		fprintf(outfile, "\n");
+	}
+	fprintf(outfile, "\n");
+	thrust::sort(z, z + number);//排序
+	int max = number - 1;
+	vector<unsigned int> rangevec;
+	int nstart = 0;
+	int i = 0; //current pos
+	while (1)
+	{
+		i++;
+		if (i == max)//over the last one
+		{
+			rangevec.push_back(z[nstart]);
+			rangevec.push_back(z[i-1]);
+			rangevec.push_back(z[i]);
+			break;
+		}
+		if (z[i] != (z[i - 1] + 1)) //discontinuous
+		{
+			rangevec.push_back(z[nstart]);
+			rangevec.push_back(z[i - 1]);
+			nstart = i;
+		}
+	}
+	for (int i = 0; i < rangevec.size(); i++)
+	{
+		if (i % 2 == 0) {
+			fprintf(outfile, "%d", rangevec[i]);
+		}
+		else {
+			fprintf(outfile, "-%d", rangevec[i]);
+			fprintf(outfile, " ");
+		}
+	}
+	fclose(outfile);
+}
 void query()
 {
 	int a, b, c, d;
@@ -219,27 +269,10 @@ void query()
 	int gridRows = (N + BLOCKROWS - 1) / BLOCKROWS;
 	dim3 gridSize(gridRows,gridCols);//行列不能反，否则在核函数中计算行列标记会出错
 	dim3 blockSize(BLOCKROWS, BLOCKCOLS);
-	//dim3 gridSize((number + blockSize.x*blockSize.y - 1) / (blockSize.x*blockSize.y));
-	//add << <gridSize, blockSize >> >(d_z);
 	add << <gridSize, blockSize >> >(d_z, a, c, b, d,M);
-	//add << <1, blockSize >> >(d_z, a, c, b, d);
 	cudaMemcpy((void*)z, (void*)d_z, N*M * sizeof(unsigned int), cudaMemcpyDeviceToHost);
-	FILE *outfile;
-	outfile = fopen("Query.txt", "w");
-	if (outfile == NULL) {
-		printf("无法打开文件\n");
-	}
-	for (int row = 0; row < N; row++)
-	{
-		for (int col = 0; col < M; col++)
-		{
-			fprintf(outfile, "%d ", z[M*row + col]);
-		}
-		fprintf(outfile, "\n");
-	}
-	fclose(outfile);
+	result(z, N, M, number);
 	printf("finished!\n");
-	
 	cudaFree(d_z);
 	free(z);
 }
@@ -247,7 +280,7 @@ void query()
 int main()
 {
 	//decode();
-	encode();
+	//encode();
 	query();
 	int option;
 	while (1)
