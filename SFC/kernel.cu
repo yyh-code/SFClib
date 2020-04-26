@@ -180,7 +180,42 @@ void decode()
 	}
 
 }
-
+void decode_one()
+{
+	unsigned int z;
+	int flag = 0, i = 0, j = 0;
+	int row = 0, col = 0;
+	printf("SFC_value input:\n");
+	scanf("%d", &z);
+	unsigned int a[16] = { 0 };//ÐÐ
+	unsigned int b[16] = { 0 };//ÁÐ
+	while (z>0)
+	{
+		if (flag == 0) {
+			b[i] = z % 2;
+			i = i + 1;
+			z = z / 2;
+			flag = 1;
+		}
+		else {
+			a[j] = z % 2;
+			j = j + 1;
+			z = z / 2;
+			flag = 0;
+		}
+	}
+	while (j > 0) {
+		if (a[--j] == 1) {
+			row += pow(2, j);
+		}
+	}
+	while (i > 0) {
+		if (b[--i] == 1) {
+			col += pow(2, i);
+		}
+	}
+	printf("%d,%d\n", row, col);
+}
 __global__ void add(unsigned int * z, int a, int c, int b, int d, int M)
 {
 	unsigned short pre_row = threadIdx.x + blockIdx.x * blockDim.x;
@@ -276,12 +311,12 @@ void query()
 	cudaFree(d_z);
 	free(z);
 }
-
+//
 int main()
 {
 	//decode();
 	//encode();
-	query();
+	//query();
 	int option;
 	while (1)
 	{
@@ -292,7 +327,7 @@ int main()
 		{
 		case 1:encode();
 			break;
-		case 2:decode();
+		case 2:decode_one();
 			break;
 		case 3:query();
 		}
