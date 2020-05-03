@@ -8,6 +8,10 @@
 #include <time.h>
 #include <thrust/sort.h>
 #include <vector>
+#include "Point.h"
+#include "Rectangle.h"
+#include "QueryBySFC.cuh"
+#include "SFCConversion.h"
 
 using std::vector;
 __global__ void en(unsigned int * z, int N,int M)
@@ -65,121 +69,121 @@ void encode()
 	free(z);
 }
 
-__global__ void de(unsigned int * z, unsigned int * a, unsigned int * b,int row,int col)
-{
-	unsigned short pre_row = threadIdx.x + blockIdx.x * blockDim.x;
-	unsigned short pre_col = threadIdx.y + blockIdx.y * blockDim.y;
-	printf("%d", pre_row);
-	int flag = 0;
-	int i, j;
-	unsigned int m[16] = { 0 };//行
-	unsigned int n[16] = { 0 };//列
-	while (z[pre_row*row + pre_col]>0)
-	{
-		if (flag == 0) {
-			n[i] = z[pre_row*row + pre_col] % 2;
-			i = i + 1;
-			z[pre_row*row + pre_col] = z[pre_row*row + pre_col] / 2;
-			flag = 1;
-		}
-		else {
-			m[j] = z[pre_row*row + pre_col] % 2;
-			j = j + 1;
-			z[pre_row*row + pre_col] = z[pre_row*row + pre_col] / 2;
-			flag = 0;
-		}
-	}
-	while (j > 0) {
-		if (m[--j] == 1) {
-			int x = j;
-			int mul=1;
-			while (x > 0) {
-				mul = 2*mul;
-				x--;
-			}
-			a[pre_row] += mul;
-		}
-	}
-	while (i > 0) {
-		if (n[--i] == 1) {
-			int y = i;
-			int mul2 = 1;
-			while (y > 0) {
-				mul2 = 2 * mul2;
-				y--;
-			}
-			b[pre_col] += mul2;
-		}
-	}
-}
-
-void decode()
-{
-	int row = 1000;
-	int col = 1000;
-	int number = row * col;
-	unsigned int *z;
-	z = (unsigned int*)malloc(number * sizeof(unsigned int));
-	unsigned int *a;
-	a = (unsigned int*)malloc(row * sizeof(unsigned int));
-	unsigned int *b;
-	b = (unsigned int*)malloc(col * sizeof(unsigned int));
-	unsigned int *d_a;
-	cudaMalloc((void**)&d_a, row * sizeof(unsigned int));
-	unsigned int *d_b;
-	cudaMalloc((void**)&d_b, col * sizeof(unsigned int));
-	unsigned int *d_z;
-	cudaMalloc((void**)&d_z, number * sizeof(unsigned int));
-	
-	int i, j;
-	FILE *fp;
-	char infile[10];
-	printf("SFC_value input:\n");
-	scanf("%s", infile);
-	fp = fopen(infile, "r");
-	if (fp == NULL)
-	{
-		printf("cannot open file\n");
-		return;
-	}
-	for (i = 0; i<row; i++)
-	{
-		for (j = 0; j<col; j++)
-		{
-			fscanf(fp, "%d ", &z[i*col + j]);
-		}
-		fscanf(fp, "\n");
-	}
-	cudaMemcpy((void*)d_a, (void*)a, row * sizeof(unsigned int), cudaMemcpyHostToDevice);
-	cudaMemcpy((void*)d_b, (void*)b, col * sizeof(unsigned int), cudaMemcpyHostToDevice);
-	cudaMemcpy((void*)d_z, (void*)z, number * sizeof(unsigned int), cudaMemcpyHostToDevice);
-	int BLOCKCOLS = 16;
-	int BLOCKROWS = 16;
-	int gridCols = (col + BLOCKCOLS - 1) / BLOCKCOLS;
-	int gridRows = (row + BLOCKROWS - 1) / BLOCKROWS;
-	dim3 gridSize(gridRows, gridCols);//行列不能反，否则在核函数中计算行列标记会出错
-	dim3 blockSize(BLOCKROWS, BLOCKCOLS);
-	//dim3 gridSize((number + blockSize.x*blockSize.y - 1) / (blockSize.x*blockSize.y));
-	//add << <gridSize, blockSize >> >(d_z);
-	de << <gridSize, blockSize >> >(d_z,d_a,d_b,row,col);
-	//add << <1, blockSize >> >(d_z, a, c, b, d);
-	cudaMemcpy((void*)a, (void*)d_a, row * sizeof(unsigned int), cudaMemcpyDeviceToHost);
-	cudaMemcpy((void*)b, (void*)d_b, row * sizeof(unsigned int), cudaMemcpyDeviceToHost);
-	FILE *outfile;
-	outfile = fopen("decode.txt", "w");
-	if (outfile == NULL) {
-		printf("无法打开文件\n");
-	}
-	for (int i = 0; i < row; i++)
-	{
-		for (int j = 0; j < col; j++)
-		{
-			fprintf(outfile, "(%d,%d)", a[i],b[j]);
-		}
-		fprintf(outfile, "\n");
-	}
-
-}
+//__global__ void de(unsigned int * z, unsigned int * a, unsigned int * b,int row,int col)
+//{
+//	unsigned short pre_row = threadIdx.x + blockIdx.x * blockDim.x;
+//	unsigned short pre_col = threadIdx.y + blockIdx.y * blockDim.y;
+//	printf("%d", pre_row);
+//	int flag = 0;
+//	int i, j;
+//	unsigned int m[16] = { 0 };//行
+//	unsigned int n[16] = { 0 };//列
+//	while (z[pre_row*row + pre_col]>0)
+//	{
+//		if (flag == 0) {
+//			n[i] = z[pre_row*row + pre_col] % 2;
+//			i = i + 1;
+//			z[pre_row*row + pre_col] = z[pre_row*row + pre_col] / 2;
+//			flag = 1;
+//		}
+//		else {
+//			m[j] = z[pre_row*row + pre_col] % 2;
+//			j = j + 1;
+//			z[pre_row*row + pre_col] = z[pre_row*row + pre_col] / 2;
+//			flag = 0;
+//		}
+//	}
+//	while (j > 0) {
+//		if (m[--j] == 1) {
+//			int x = j;
+//			int mul=1;
+//			while (x > 0) {
+//				mul = 2*mul;
+//				x--;
+//			}
+//			a[pre_row] += mul;
+//		}
+//	}
+//	while (i > 0) {
+//		if (n[--i] == 1) {
+//			int y = i;
+//			int mul2 = 1;
+//			while (y > 0) {
+//				mul2 = 2 * mul2;
+//				y--;
+//			}
+//			b[pre_col] += mul2;
+//		}
+//	}
+//}
+//
+//void decode()
+//{
+//	int row = 1000;
+//	int col = 1000;
+//	int number = row * col;
+//	unsigned int *z;
+//	z = (unsigned int*)malloc(number * sizeof(unsigned int));
+//	unsigned int *a;
+//	a = (unsigned int*)malloc(row * sizeof(unsigned int));
+//	unsigned int *b;
+//	b = (unsigned int*)malloc(col * sizeof(unsigned int));
+//	unsigned int *d_a;
+//	cudaMalloc((void**)&d_a, row * sizeof(unsigned int));
+//	unsigned int *d_b;
+//	cudaMalloc((void**)&d_b, col * sizeof(unsigned int));
+//	unsigned int *d_z;
+//	cudaMalloc((void**)&d_z, number * sizeof(unsigned int));
+//	
+//	int i, j;
+//	FILE *fp;
+//	char infile[10];
+//	printf("SFC_value input:\n");
+//	scanf("%s", infile);
+//	fp = fopen(infile, "r");
+//	if (fp == NULL)
+//	{
+//		printf("cannot open file\n");
+//		return;
+//	}
+//	for (i = 0; i<row; i++)
+//	{
+//		for (j = 0; j<col; j++)
+//		{
+//			fscanf(fp, "%d ", &z[i*col + j]);
+//		}
+//		fscanf(fp, "\n");
+//	}
+//	cudaMemcpy((void*)d_a, (void*)a, row * sizeof(unsigned int), cudaMemcpyHostToDevice);
+//	cudaMemcpy((void*)d_b, (void*)b, col * sizeof(unsigned int), cudaMemcpyHostToDevice);
+//	cudaMemcpy((void*)d_z, (void*)z, number * sizeof(unsigned int), cudaMemcpyHostToDevice);
+//	int BLOCKCOLS = 16;
+//	int BLOCKROWS = 16;
+//	int gridCols = (col + BLOCKCOLS - 1) / BLOCKCOLS;
+//	int gridRows = (row + BLOCKROWS - 1) / BLOCKROWS;
+//	dim3 gridSize(gridRows, gridCols);//行列不能反，否则在核函数中计算行列标记会出错
+//	dim3 blockSize(BLOCKROWS, BLOCKCOLS);
+//	//dim3 gridSize((number + blockSize.x*blockSize.y - 1) / (blockSize.x*blockSize.y));
+//	//add << <gridSize, blockSize >> >(d_z);
+//	de << <gridSize, blockSize >> >(d_z,d_a,d_b,row,col);
+//	//add << <1, blockSize >> >(d_z, a, c, b, d);
+//	cudaMemcpy((void*)a, (void*)d_a, row * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+//	cudaMemcpy((void*)b, (void*)d_b, row * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+//	FILE *outfile;
+//	outfile = fopen("decode.txt", "w");
+//	if (outfile == NULL) {
+//		printf("无法打开文件\n");
+//	}
+//	for (int i = 0; i < row; i++)
+//	{
+//		for (int j = 0; j < col; j++)
+//		{
+//			fprintf(outfile, "(%d,%d)", a[i],b[j]);
+//		}
+//		fprintf(outfile, "\n");
+//	}
+//
+//}
 void decode_one()
 {
 	unsigned int z;
@@ -216,7 +220,7 @@ void decode_one()
 	}
 	printf("%d,%d\n", row, col);
 }
-__global__ void add(unsigned int * z, int a, int c, int b, int d, int M)
+__global__ void bruteforce(unsigned int * z, int a, int c, int b, int d, int M)
 {
 	unsigned short pre_row = threadIdx.x + blockIdx.x * blockDim.x;
 	unsigned short pre_col = threadIdx.y + blockIdx.y * blockDim.y;
@@ -285,7 +289,7 @@ void query()
 {
 	int a, b, c, d;
 	printf("box input:\n");
-	scanf("%d%d%d%d", &a, &b, &c, &d);
+	scanf("%d%d%d%d", &c, &b, &a, &d);
 	printf("In process\n");
 	clock_t start_time = clock();
 	int N = a - c + 1;
@@ -304,23 +308,62 @@ void query()
 	int gridRows = (N + BLOCKROWS - 1) / BLOCKROWS;
 	dim3 gridSize(gridRows,gridCols);//行列不能反，否则在核函数中计算行列标记会出错
 	dim3 blockSize(BLOCKROWS, BLOCKCOLS);
-	add << <gridSize, blockSize >> >(d_z, a, c, b, d,M);
+	bruteforce << <gridSize, blockSize >> >(d_z, a, c, b, d,M);
 	cudaMemcpy((void*)z, (void*)d_z, N*M * sizeof(unsigned int), cudaMemcpyDeviceToHost);
 	result(z, N, M, number);
 	printf("finished!\n");
 	cudaFree(d_z);
 	free(z);
 }
-//
+
+void print_ranges(vector<sfc_bigint>& ranges)
+{
+	sfc_bigint ntotal_len = 0;
+	//if (str == NULL) return;
+
+	//cout << str << endl;
+	for (int i = 0; i < ranges.size(); i = i + 2)
+	{
+		//printf("\n");
+
+		//printf("%lld---%lld\n", ranges[i], ranges[i + 1]);
+		cout << ranges[i] << "----" << ranges[i + 1] << endl;
+
+		ntotal_len += (ranges[i + 1] - ranges[i] + 1);
+	}
+
+	cout << "total ranges len:  " << ntotal_len << endl;
+}
+void query_GPU()
+{
+	int a, b, c, d;
+	printf("box input:\n");
+	scanf("%d%d%d%d", &a, &b, &c, &d);
+	printf("In process\n");
+	long Point1[2] = { a, b }; //3, 2 //8, 4
+	long Point2[2] = { c, d };  //5, 5//12, 9
+	Point<long> MinPoint(Point1, 2);
+	Point<long> MaxPoint(Point2, 2);
+	Rect<long> rec(MinPoint, MaxPoint);
+	QueryBySFC<long> querytest(2, 30);//查询窗口大小和后者形参有关
+
+	/*vector<sfc_bigint> vec_res = querytest.RangeQueryByBruteforce_LNG(rec, Morton);
+	print_ranges(vec_res);*/
+	clock_t start, end;
+	start = clock();
+	vector<sfc_bigint> vec_res2 = querytest.RangeQueryByRecursive_LNG(rec, Morton, 0, 1);
+	print_ranges(vec_res2);
+	end = clock();		//程序结束用时
+	double endtime = (double)(end - start) / CLOCKS_PER_SEC;
+	cout << "Total time:" << endtime << endl;
+}
 int main()
 {
-	//decode();
-	//encode();
-	//query();
+
 	int option;
 	while (1)
 	{
-		printf("1.encode   2.decode  3.query\n");
+		printf("1.encode 2.decode 3.query 4.query_GPU	\n");
 		printf("please input option：");
 		scanf("%d", &option);
 		switch (option)
@@ -330,6 +373,8 @@ int main()
 		case 2:decode_one();
 			break;
 		case 3:query();
+			break;
+		case 4:query_GPU();
 		}
 	}
 	//clock_t end_time = clock();
