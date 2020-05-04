@@ -445,6 +445,7 @@ __global__ void recursive(sfc_bigint *d_a, sfc_bigint *d_b, sfc_bigint *d_c, sfc
 		k |= (row & 1U << i) << (i + 1) | (col & 1U << i) << i;
 		d_z[2*id] = k;
 	}
+	k = 0;
 	for (int i = 0; i < sizeof(row) * CHAR_BIT; i++) {
 		k |= (row_2 & 1U << i) << (i + 1) | (col_2 & 1U << i) << i;
 		d_z[2*id+1] = k;
